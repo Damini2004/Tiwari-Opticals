@@ -1,0 +1,49 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+    function isUserOwns(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read: if isUserOwns(uid) || isAdmin();
+      allow write: if isUserOwns(uid) || isAdmin();
+    }
+
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /prescriptions/{uid}/{allPaths=**} {
+      allow read: if isUserOwns(uid) || isAdmin();
+      allow write: if isUserOwns(uid) || isAdmin();
+    }
+
+    match /stores/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /blogs/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

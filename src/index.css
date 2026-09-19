@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', sans-serif;
+  color: #111827;
+  background: #f8f8f6;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(201, 162, 39, 0.12), transparent 20%),
+    linear-gradient(180deg, #f9f7f3 0%, #f5f5f4 100%);
+  color: #111827;
+}
+
+::selection {
+  background: rgba(201, 162, 39, 0.25);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Manrope', 'Poppins', sans-serif;
+    @apply tracking-tight text-brand;
+  }
+
+  p {
+    @apply text-brand-muted;
+  }
+
+  a {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  img {
+    @apply select-none;
+  }
+}
+
+@layer components {
+  .container-shell {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-brand-dark active:translate-y-0;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-brand shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-brand hover:text-brand active:translate-y-0;
+  }
+
+  .card-surface {
+    @apply rounded-3xl border border-slate-200 bg-white shadow-soft transition duration-200 hover:-translate-y-1 hover:shadow-lg;
+  }
+
+  .badge-gold {
+    @apply inline-flex items-center rounded-full bg-[#F7E9B3] px-2.5 py-1 text-xs font-semibold text-brand-gold;
+  }
+
+  .section-title {
+    @apply text-3xl font-extrabold tracking-tight text-brand md:text-4xl;
+  }
+}
+
+@layer utilities {
+  .luxury-ring {
+    box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.06), 0 18px 40px rgba(17, 24, 39, 0.08);
+  }
+
+  .soft-panel {
+    background: rgba(255, 255, 255, 0.76);
+    backdrop-filter: blur(10px);
+  }
+}
+
