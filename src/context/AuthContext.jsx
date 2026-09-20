@@ -71,22 +71,14 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const profileSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
-      const profile = profileSnap.exists() ? profileSnap.data() : {};
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        fullName: profile.fullName || firebaseUser.displayName || 'Fashion Eye Care User',
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-
+      // Admin access must be determined from Firebase Authentication only.
+      // Do not save a user record into Firestore, because that would make it look
+      // like a normal profile entry instead of an admin identity.
       const nextUser = normalizeUser({
-        ...profile,
         id: firebaseUser.uid,
         uid: firebaseUser.uid,
         email: firebaseUser.email,
-        fullName: profile.fullName || firebaseUser.displayName || 'Customer',
+        fullName: firebaseUser.displayName || 'Fashion Eye Care User',
       });
 
       setUser(nextUser);
@@ -113,13 +105,10 @@ export function AuthProvider({ children }) {
         createdAt: new Date().toISOString(),
       });
 
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
-        email: normalizedEmail,
-        fullName: fullName || 'Fashion Customer',
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      // Firebase Authentication users are treated as admin for this project.
+      nextUser.role = 'admin';
 
+      // Do not store Firestore user records for authenticated admin identities.
       setUser(nextUser);
       return nextUser;
     }
@@ -151,19 +140,12 @@ export function AuthProvider({ children }) {
       const profileSnap = await getDoc(doc(db, 'users', userCredential.user.uid));
       const profile = profileSnap.exists() ? profileSnap.data() : {};
 
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        fullName: profile.fullName || userCredential.user.displayName || 'Fashion Eye Care User',
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-
+      // Do not persist authenticated users into Firestore user docs.
       const nextUser = normalizeUser({
-        ...profile,
         id: userCredential.user.uid,
         uid: userCredential.user.uid,
         email: userCredential.user.email,
-        fullName: profile.fullName || userCredential.user.displayName || 'Customer',
+        fullName: userCredential.user.displayName || 'Fashion Eye Care User',
       });
 
       setUser(nextUser);

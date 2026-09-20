@@ -20,6 +20,13 @@ const adminUid = (import.meta.env.VITE_ADMIN_UID || '').trim();
 
 const isAdminIdentity = (user) => {
   if (!user) return false;
+
+  // In Firebase mode, any authenticated user is treated as admin, matching the
+  // requirement to use the Authentication tab as the source of admin access.
+  if (isFirebaseConfigured) {
+    return Boolean(user.uid || user.email);
+  }
+
   const email = String(user.email || '').trim().toLowerCase();
   return Boolean((adminUid && user.uid === adminUid) || (adminEmail && email === adminEmail));
 };
