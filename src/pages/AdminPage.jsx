@@ -62,6 +62,26 @@ export default function AdminPage() {
     }));
   };
 
+  const handleImageUpload = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const readers = files.map((file) => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    }));
+
+    Promise.all(readers).then((imageUrls) => {
+      const nextImages = imageUrls.filter(Boolean);
+      setForm((current) => ({
+        ...current,
+        thumbnail: nextImages[0] || current.thumbnail,
+        images: nextImages.length ? nextImages : current.images,
+      }));
+    });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -227,7 +247,17 @@ export default function AdminPage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-brand">Image URL</label>
-              <input name="thumbnail" value={form.thumbnail} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-brand" required />
+              <input name="thumbnail" value={form.thumbnail} onChange={handleInputChange} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-brand" placeholder="https://example.com/image.jpg" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-brand">Upload product image</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none file:mr-3 file:rounded file:border-0 file:bg-brand-gold file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand focus:border-brand"
+              />
+              <p className="mt-1 text-xs text-brand-muted">Uploaded images are stored as data URLs in the product document.</p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-brand">Short description</label>
