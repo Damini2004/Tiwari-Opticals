@@ -13,22 +13,19 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
 
-// Admin access is based on the Firebase Auth identity, never on a writable
-// Firestore user profile field. Set one (or both) of these at build time.
+// Admin access should be derived from a trusted identity, not from a writable
+// Firestore profile. The app supports a configured admin email/UID, with a
+// local demo fallback for the seeded admin account.
 const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'admin@fashioneyecare.com').trim().toLowerCase();
 const adminUid = (import.meta.env.VITE_ADMIN_UID || '').trim();
 
 const isAdminIdentity = (user) => {
   if (!user) return false;
 
-  // In Firebase mode, any authenticated user is treated as admin, matching the
-  // requirement to use the Authentication tab as the source of admin access.
-  if (isFirebaseConfigured) {
-    return Boolean(user.uid || user.email);
-  }
-
   const email = String(user.email || '').trim().toLowerCase();
-  return Boolean((adminUid && user.uid === adminUid) || (adminEmail && email === adminEmail));
+  const uid = String(user.uid || user.id || '').trim();
+
+  return Boolean((adminUid && uid === adminUid) || (adminEmail && email === adminEmail));
 };
 
 const isFirebaseConfigured = Boolean(

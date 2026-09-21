@@ -9,11 +9,18 @@ export function CartProvider({ children }) {
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : [];
   });
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  const showToast = (message) => {
+    setToast(message);
+    window.clearTimeout(showToast.timeoutId);
+    showToast.timeoutId = window.setTimeout(() => setToast(null), 2200);
+  };
 
   const addToCart = (product, selectedVariant = {}) => {
     const variantKey = `${selectedVariant.color || product.availableColors?.[0] || 'default'}-${selectedVariant.size || product.size || 'M'}`;
@@ -43,6 +50,8 @@ export function CartProvider({ children }) {
         },
       ];
     });
+
+    showToast(`${product.name} added to cart`);
   };
 
   const updateQuantity = (productId, color, size, quantity) => {
@@ -72,8 +81,8 @@ export function CartProvider({ children }) {
   const count = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
 
   const value = useMemo(
-    () => ({ items, addToCart, updateQuantity, removeItem, clearCart, subtotal, count }),
-    [items, subtotal, count],
+    () => ({ items, addToCart, updateQuantity, removeItem, clearCart, subtotal, count, toast, showToast }),
+    [items, subtotal, count, toast],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

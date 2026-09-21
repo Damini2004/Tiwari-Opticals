@@ -14,6 +14,7 @@ import CheckoutPage from './pages/CheckoutPage';
 import OrderSuccessPage from './pages/OrderSuccessPage';
 import ContactPage from './pages/ContactPage';
 import BookEyeTestPage from './pages/BookEyeTestPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AdminPage from './pages/AdminPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -44,6 +45,7 @@ function App() {
             <Route path="/order-success" element={<OrderSuccessPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/book-eye-test" element={<BookEyeTestPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route
               path="/admin"
               element={

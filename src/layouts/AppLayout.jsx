@@ -1,5 +1,5 @@
 import { Outlet, Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, Search, Heart, ShoppingBag, User, MessageCircle, MapPin, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Heart, ShoppingBag, User, MessageCircle, MapPin, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useState } from 'react';
@@ -12,10 +12,13 @@ const navItems = [
 
 function AppLayout() {
   const navigate = useNavigate();
-  const { count: cartCount } = useCart();
+  const { count: cartCount, toast } = useCart();
   const { count: wishlistCount } = useWishlist();
   const [query, setQuery] = useState('');
+  const [mobileOpen, setMobileOpen] = useState(false);
   const whatsappNumber = import.meta.env.VITE_WHATSAPP_NUMBER || '919011886479';
+
+  const handleNavClick = () => setMobileOpen(false);
 
   const onSearch = (event) => {
     event.preventDefault();
@@ -40,11 +43,17 @@ function AppLayout() {
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-sm">
         <div className="container-shell flex items-center justify-between gap-4 py-4">
           <div className="flex items-center gap-3">
-            <button className="rounded-full border border-slate-200 p-2 lg:hidden" aria-label="Open menu">
+            <button
+              type="button"
+              className="rounded-full border border-slate-200 p-2 lg:hidden"
+              aria-label="Open menu"
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen((open) => !open)}
+            >
               <Menu size={18} />
             </button>
             <Link to="/" className="text-xl font-black tracking-tight text-brand">
-              Fashion Eye Care
+              Tiwari Opticals
             </Link>
           </div>
 
@@ -90,14 +99,42 @@ function AppLayout() {
         </div>
       </header>
 
+      {mobileOpen && (
+        <div className="border-b border-slate-200 bg-white lg:hidden">
+          <nav className="container-shell flex flex-col gap-2 py-3">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.label}
+                to={item.to}
+                onClick={handleNavClick}
+                className={({ isActive }) =>
+                  `rounded-xl px-3 py-2 text-sm font-medium ${isActive ? 'bg-brand-gold/10 text-brand-gold' : 'text-brand hover:bg-slate-100'}`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      )}
+
       <main className="pb-16">
         <Outlet />
       </main>
 
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-50">
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg ring-2 ring-emerald-200">
+            <CheckCircle2 size={18} className="text-emerald-600" />
+            {toast}
+          </div>
+        </div>
+      )}
+
       <footer className="border-t border-slate-200 bg-white">
         <div className="container-shell grid gap-8 py-10 md:grid-cols-4">
           <div>
-            <h3 className="mb-4 text-lg font-bold">Fashion Eye Care</h3>
+            <h3 className="mb-4 text-lg font-bold">Tiwari Opticals</h3>
             <p className="mb-4">Premium eyewear and eye-care solutions crafted for everyday confidence.</p>
             <div className="flex items-center gap-2 text-sm text-brand-muted">
               <MapPin size={14} />
@@ -132,7 +169,7 @@ function AppLayout() {
           </div>
         </div>
         <div className="border-t border-slate-200 py-4 text-center text-xs text-brand-muted">
-          © 2026 Fashion Eye Care. All rights reserved.
+          © 2026 Tiwari Opticals. All rights reserved.
         </div>
       </footer>
     </div>

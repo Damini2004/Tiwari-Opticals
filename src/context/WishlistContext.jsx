@@ -1,19 +1,30 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from './AuthContext';
 
 const WishlistContext = createContext(null);
-const STORAGE_KEY = 'fashion_eye_care_wishlist';
 
 export function WishlistProvider({ children }) {
-  const [items, setItems] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const { user } = useAuth();
+  const storageKey = user?.id ? `fashion_eye_care_wishlist_${user.id}` : 'fashion_eye_care_wishlist_guest';
+
+  const [items, setItems] = useState([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }, [items]);
+
+    if (!user) {
+      setItems([]);
+      return;
+    }
+
+    const saved = localStorage.getItem(storageKey);
+    setItems(saved ? JSON.parse(saved) : []);
+  }, [user?.id, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) return;
+    localStorage.setItem(storageKey, JSON.stringify(items));
+  }, [items, storageKey, user]);
 
   const toggleItem = (productId) => {
     setItems((current) =>

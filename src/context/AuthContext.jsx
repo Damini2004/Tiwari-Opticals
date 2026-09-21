@@ -12,6 +12,7 @@ import { getUsers, saveUser } from '../lib/localData';
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'fashion_eye_care_user';
+const OTP_STORAGE_KEY = 'fashion_eye_care_customer_otp';
 const DEFAULT_ADMIN = {
   id: 'admin-fashion-eye-care',
   fullName: 'Fashion Eye Care Admin',
@@ -22,6 +23,25 @@ const DEFAULT_ADMIN = {
 
 const isAdminEmail = (email = '') => String(email).trim().toLowerCase() === adminEmail;
 
+const generateOtpCode = () => String(Math.floor(100000 + Math.random() * 900000));
+const OTP_API_URL = import.meta.env.VITE_OTP_API_URL || '/api';
+
+const getOtpStore = () => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const saved = window.localStorage.getItem(OTP_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveOtpStore = (nextStore) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(OTP_STORAGE_KEY, JSON.stringify(nextStore));
+};
+
 const normalizeUser = (rawUser = {}) => {
   const email = String(rawUser.email || '').trim().toLowerCase();
   const isAdminUser = isAdminIdentity({ ...rawUser, email });
@@ -31,6 +51,7 @@ const normalizeUser = (rawUser = {}) => {
     uid: rawUser.uid || rawUser.id,
     fullName: rawUser.fullName || rawUser.displayName || 'Fashion Customer',
     email,
+    phone: rawUser.phone || '',
     role: isAdminUser ? 'admin' : 'customer',
     createdAt: rawUser.createdAt || new Date().toISOString(),
   };
@@ -88,8 +109,123 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, [isFirebaseConfigured]);
 
-  const signup = async ({ fullName, email, password }) => {
+  const sendOtp = async ({ email, phone }) => {
     const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedPhone = String(phone || '').trim();
+
+    if (!normalizedEmail) {
+      throw new Error('Email is required to receive the OTP.');
+    }
+
+    if (!normalizedPhone) {
+      throw new Error('Phone number is required for your customer profile.');
+    }
+
+    try {
+      const response = await fetch(`${OTP_API_URL}/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, phone: normalizedPhone }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Unable to send OTP email.');
+      }
+
+      const otpCode = payload.devCode || generateOtpCode();
+      const store = getOtpStore();
+      store[normalizedEmail] = {
+        code: otpCode,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      };
+      saveOtpStore(store);
+
+      return {
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        demoCode: otpCode,
+        expiresAt: store[normalizedEmail].expiresAt,
+        message: payload.message || `OTP sent to ${normalizedEmail}.`,
+      };
+    } catch (error) {
+      const otpCode = generateOtpCode();
+      const store = getOtpStore();
+      store[normalizedEmail] = {
+        code: otpCode,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      };
+      saveOtpStore(store);
+
+      const fallbackMessage = `Email OTP service is unavailable right now. Local demo code: ${otpCode}`;
+      return {
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        demoCode: otpCode,
+        expiresAt: store[normalizedEmail].expiresAt,
+        message: fallbackMessage,
+      };
+    }
+  };
+
+  const verifyOtp = async ({ email, otp }) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedOtp = String(otp || '').trim();
+
+    if (!normalizedEmail || !normalizedOtp) {
+      throw new Error('Email and OTP are required.');
+    }
+
+    try {
+      const response = await fetch(`${OTP_API_URL}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, otp: normalizedOtp }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) { 
+        throw new Error(payload.error || 'Unable to verify OTP.');
+      }
+
+      const store = getOtpStore();
+      delete store[normalizedEmail];
+      saveOtpStore(store);
+      return true;
+    } catch (error) {
+      const store = getOtpStore();
+      const record = store[normalizedEmail];
+
+      if (!record) {
+        throw error;
+      }
+
+      if (Date.now() > record.expiresAt) {
+        delete store[normalizedEmail];
+        saveOtpStore(store);
+        throw new Error('OTP expired. Please request a new one.');
+      }
+
+      if (record.code !== normalizedOtp) {
+        throw new Error('Invalid OTP. Please check the code and try again.');
+      }
+
+      delete store[normalizedEmail];
+      saveOtpStore(store);
+      return true;
+    }
+  };
+
+  const signup = async ({ fullName, email, password, phone, isPhoneVerified = false }) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedPhone = String(phone || '').trim();
+
+    if (!normalizedPhone) {
+      throw new Error('Phone number is required.');
+    }
+
+    if (!isPhoneVerified) {
+      throw new Error('Phone number must be verified before creating the account.');
+    }
 
     if (isAdminEmail(normalizedEmail)) {
       throw new Error('Admin credentials are reserved for the site administrator.');
@@ -102,13 +238,11 @@ export function AuthProvider({ children }) {
         uid: userCredential.user.uid,
         fullName: fullName || 'Fashion Customer',
         email: userCredential.user.email,
+        phone: normalizedPhone,
         createdAt: new Date().toISOString(),
       });
 
-      // Firebase Authentication users are treated as admin for this project.
-      nextUser.role = 'admin';
-
-      // Do not store Firestore user records for authenticated admin identities.
+      nextUser.role = 'customer';
       setUser(nextUser);
       return nextUser;
     }
@@ -123,6 +257,7 @@ export function AuthProvider({ children }) {
       fullName: fullName || 'Fashion Customer',
       email: normalizedEmail,
       password,
+      phone: normalizedPhone,
       role: 'customer',
       createdAt: new Date().toISOString(),
     };
@@ -136,20 +271,35 @@ export function AuthProvider({ children }) {
     const normalizedEmail = String(email || '').trim().toLowerCase();
 
     if (isFirebaseConfigured) {
-      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      const profileSnap = await getDoc(doc(db, 'users', userCredential.user.uid));
-      const profile = profileSnap.exists() ? profileSnap.data() : {};
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+        const nextUser = normalizeUser({
+          id: userCredential.user.uid,
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          fullName: userCredential.user.displayName || 'Fashion Eye Care User',
+        });
 
-      // Do not persist authenticated users into Firestore user docs.
-      const nextUser = normalizeUser({
-        id: userCredential.user.uid,
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        fullName: userCredential.user.displayName || 'Fashion Eye Care User',
-      });
+        setUser(nextUser);
+        return nextUser;
+      } catch (firebaseError) {
+        const isDemoAdminLogin = normalizedEmail === DEFAULT_ADMIN.email && String(password || '') === DEFAULT_ADMIN.password;
 
-      setUser(nextUser);
-      return nextUser;
+        if (isDemoAdminLogin) {
+          const localAdminUser = {
+            ...DEFAULT_ADMIN,
+            role: 'admin',
+            isAdmin: true,
+            password: undefined,
+          };
+
+          setUser(localAdminUser);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(localAdminUser));
+          return localAdminUser;
+        }
+
+        throw firebaseError;
+      }
     }
 
     ensureAdminSeed();
@@ -185,7 +335,7 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(
-    () => ({ user, signup, login, logout, isAdmin: isAdminIdentity(user) }),
+    () => ({ user, signup, login, logout, sendOtp, verifyOtp, isAdmin: isAdminIdentity(user) }),
     [user],
   );
 

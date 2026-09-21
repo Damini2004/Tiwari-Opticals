@@ -47,9 +47,9 @@ export default function HomePage() {
       <section className="container-shell py-10 md:py-16">
         <div className="grid items-center gap-8 overflow-hidden rounded-[2rem] bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 p-6 text-white shadow-soft md:grid-cols-2 md:p-10 luxury-ring">
           <div>
-            <span className="badge-gold mb-4 border border-[#e8d68d]">Premium Eyewear</span>
-            <h1 className="max-w-lg text-4xl font-black md:text-6xl">See Better. Look Better.</h1>
-            <p className="mt-4 max-w-xl text-base text-slate-200 md:text-lg">
+            <span className="mb-4 inline-flex rounded-full border border-[#e8d68d] bg-[#F7E9B3] px-4 py-2 text-sm font-semibold uppercase tracking-[0.18em] text-brand">Premium Eyewear</span>
+            <h1 className="max-w-lg text-4xl font-black leading-tight text-white md:text-6xl">See Better. Look Better.</h1>
+            <p className="mt-4 max-w-xl text-base font-medium text-slate-200 md:text-lg">
               Discover premium eyewear designed for comfort, clarity and everyday style.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">

@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useWishlist } from '../context/WishlistContext';
 import { getOrdersForUser } from '../services/storeService';
+import { getProducts as getProductsFromDb } from '../services/productService';
+import { getProducts as getLocalProducts } from '../lib/localData';
+import { isFirebaseConfigured } from '../firebase/config';
 
 export default function AccountPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { items: wishlistIds } = useWishlist();
   const [orders, setOrders] = useState([]);
+  const [wishlistProducts, setWishlistProducts] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   useEffect(() => {
     if (!user?.id) {
       setOrders([]);
+      setWishlistProducts([]);
       return;
     }
 
@@ -29,8 +36,17 @@ export default function AccountPage() {
         if (active) setOrdersLoading(false);
       });
 
+    const loadWishlistProducts = async () => {
+      const products = isFirebaseConfigured ? await getProductsFromDb({ active: true }) : getLocalProducts();
+      if (active) {
+        setWishlistProducts(products.filter((product) => wishlistIds.includes(product.id)));
+      }
+    };
+
+    loadWishlistProducts();
+
     return () => { active = false; };
-  }, [user?.id]);
+  }, [user?.id, wishlistIds]);
 
   if (!user) {
     return (
@@ -91,7 +107,21 @@ export default function AccountPage() {
         </div>
         <div className="card-surface p-6">
           <h3 className="text-xl font-bold">Wishlist</h3>
-          <p className="mt-3 text-sm text-brand-muted">Save your favorite styles and move them to cart easily.</p>
+          {wishlistProducts.length === 0 ? (
+            <p className="mt-3 text-sm text-brand-muted">No saved items yet. Add styles to your wishlist from the shop.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {wishlistProducts.map((product) => (
+                <div key={product.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                  <img src={product.thumbnail || product.images?.[0]} alt={product.name} className="h-14 w-14 rounded-lg object-cover" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-brand">{product.name}</p>
+                    <p className="text-xs text-brand-muted">₹{Number(product.sellingPrice || 0).toLocaleString('en-IN')}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

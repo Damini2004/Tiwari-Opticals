@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { brands, categories } from '../data/products';
 import { isFirebaseConfigured } from '../firebase/config';
 import { getProducts as getProductsFromDb, saveProductToDb, deleteProductFromDb } from '../services/productService';
 import { getProducts as getLocalProducts, upsertProduct, deleteProduct } from '../lib/localData';
 import { getContactMessages, getOrders, subscribeToAppointments } from '../services/storeService';
+import { useAuth } from '../context/AuthContext';
+
+const ADMIN_QR_KEY = 'fashion_eye_care_admin_qr';
 
 const emptyForm = {
   id: '',
@@ -26,20 +30,30 @@ const emptyForm = {
 };
 
 export default function AdminPage() {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [orders, setOrders] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [messages, setMessages] = useState([]);
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState(emptyForm);
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [qrSaveMessage, setQrSaveMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('newest');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setQrCodeUrl(localStorage.getItem(ADMIN_QR_KEY) || 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80');
+    }
+
     const loadData = async () => {
       setOrders(await getOrders());
       setMessages(await getContactMessages());
@@ -97,6 +111,20 @@ export default function AdminPage() {
         }
       });
   }, [products, searchTerm, categoryFilter, statusFilter, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter, statusFilter, sortBy, itemsPerPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const handleInputChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -270,9 +298,41 @@ export default function AdminPage() {
     setProducts(getLocalProducts());
   };
 
+  const handleQrUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const nextValue = String(reader.result || '');
+      setQrCodeUrl(nextValue);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveQrCode = () => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(ADMIN_QR_KEY, qrCodeUrl.trim() || '');
+    setQrSaveMessage('QR saved successfully.');
+    window.clearTimeout(saveQrCode.timeoutId);
+    saveQrCode.timeoutId = window.setTimeout(() => setQrSaveMessage(''), 2200);
+  };
+
   return (
     <div className="container-shell py-10">
-      <h1 className="text-4xl font-black">Admin dashboard</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-4xl font-black">Admin dashboard</h1>
+        <button
+          type="button"
+          onClick={async () => {
+            await logout();
+            navigate('/login', { replace: true });
+          }}
+          className="btn-secondary"
+        >
+          Logout
+        </button>
+      </div>
       <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <div className="card-surface p-6">
           <p className="text-sm text-brand-muted">Total Products</p>
@@ -289,6 +349,50 @@ export default function AdminPage() {
         <div className="card-surface p-6">
           <p className="text-sm text-brand-muted">Low Stock</p>
           <h3 className="mt-3 text-3xl font-black">{productStats.lowStock}</h3>
+        </div>
+      </div>
+
+      <div className="mt-10 card-surface p-6">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold">Payment QR settings</h2>
+            <p className="text-sm text-brand-muted">This QR will be displayed to customers during checkout.</p>
+          </div>
+          <button type="button" onClick={saveQrCode} className="btn-primary px-4 py-2 text-sm">Save QR</button>
+        </div>
+        {qrSaveMessage && (
+          <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+            {qrSaveMessage}
+          </div>
+        )}
+        <div className="grid gap-4 md:grid-cols-[1fr_180px] md:items-end">
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-brand">QR code image URL</label>
+              <input
+                value={qrCodeUrl}
+                onChange={(event) => setQrCodeUrl(event.target.value)}
+                placeholder="https://example.com/qr-code.png"
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-brand">Upload QR image</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleQrUpload}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none file:mr-3 file:rounded file:border-0 file:bg-brand-gold file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand focus:border-brand"
+              />
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+            {qrCodeUrl ? (
+              <img src={qrCodeUrl} alt="Admin payment QR" className="mx-auto h-24 w-24 rounded-lg object-cover" />
+            ) : (
+              <div className="flex h-24 w-24 items-center justify-center text-center text-[10px] text-brand-muted">No QR</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -349,7 +453,7 @@ export default function AdminPage() {
                       <td colSpan="6" className="px-3 py-6 text-center text-brand-muted">No products match your filters.</td>
                     </tr>
                   ) : (
-                    filteredProducts.map((product) => (
+                    paginatedProducts.map((product) => (
                       <tr key={product.id} className="border-t border-slate-200 align-middle">
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-3">
@@ -381,6 +485,45 @@ export default function AdminPage() {
               </table>
             </div>
           </div>
+
+          {filteredProducts.length > 0 && (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 text-sm text-brand-muted">
+                <span>Rows per page</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={(event) => setItemsPerPage(Number(event.target.value))}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 text-sm text-brand-muted">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Prev
+                </button>
+                <span className="font-medium text-brand">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={currentPage === totalPages}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card-surface p-6">

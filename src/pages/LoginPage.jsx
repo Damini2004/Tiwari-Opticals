@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { isAdminIdentity } from '../firebase/config';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, login } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
@@ -26,7 +27,8 @@ export default function LoginPage() {
 
     try {
       const loggedInUser = await login(form);
-      navigate(isAdminIdentity(loggedInUser) ? '/admin' : '/account');
+      const redirectTarget = location.state?.from || (isAdminIdentity(loggedInUser) ? '/admin' : '/account');
+      navigate(redirectTarget, { replace: true });
     } catch (err) {
       setError(err.message || 'Unable to login.');
     }
@@ -52,7 +54,7 @@ export default function LoginPage() {
         </form>
         <div className="mt-5 flex items-center justify-between text-sm">
           <Link to="/signup" className="text-brand-gold">Create account</Link>
-          <a href="/" className="text-brand-muted">Forgot password?</a>
+          <Link to="/reset-password" className="text-brand-muted">Forgot password?</Link>
         </div>
       </div>
     </div>
