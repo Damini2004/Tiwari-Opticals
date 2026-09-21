@@ -14,6 +14,7 @@ export default function ProductPage() {
   const [product, setProduct] = useState(null);
   const [selectedColor, setSelectedColor] = useState('Black');
   const [selectedSize, setSelectedSize] = useState('M');
+  const [activeMedia, setActiveMedia] = useState(null);
 
   useEffect(() => {
     const loadProduct = async () => {
@@ -34,9 +35,29 @@ export default function ProductPage() {
     loadProduct();
   }, [id]);
 
+  useEffect(() => {
+    if (!product) return;
+
+    const mediaItems = [
+      ...(product.images || []).filter(Boolean).map((url) => ({ type: 'image', url })),
+      ...(product.videos || []).filter(Boolean).map((url) => ({ type: 'video', url })),
+    ];
+
+    const preferredVideo = mediaItems.find((item) => item.type === 'video');
+    const fallback = { type: 'image', url: product.thumbnail || product.images?.find(Boolean) || '' };
+    setActiveMedia(preferredVideo || mediaItems[0] || fallback);
+  }, [product]);
+
   if (!product) {
     return <div className="container-shell py-16 text-center text-brand-muted">Loading product...</div>;
   }
+
+  const mediaItems = [
+    ...(product.images || []).filter(Boolean).map((url) => ({ type: 'image', url })),
+    ...(product.videos || []).filter(Boolean).map((url) => ({ type: 'video', url })),
+  ];
+
+  const hasMainMedia = activeMedia?.url;
 
   const inWishlist = wishlist.includes(product.id);
   const whatsappNumber = import.meta.env.VITE_WHATSAPP_NUMBER || '919011886479';
@@ -49,7 +70,36 @@ export default function ProductPage() {
       </div>
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="card-surface overflow-hidden p-4">
-          <img src={product.thumbnail} alt={product.name} className="h-[520px] w-full rounded-2xl object-cover" />
+          <div className="overflow-hidden rounded-2xl bg-slate-100">
+            {activeMedia?.type === 'video' && activeMedia.url ? (
+              <video src={activeMedia.url} controls autoPlay muted playsInline className="h-[520px] w-full object-cover" />
+            ) : hasMainMedia ? (
+              <img src={activeMedia.url} alt={product.name} className="h-[520px] w-full object-cover" />
+            ) : (
+              <div className="flex h-[520px] w-full items-center justify-center bg-slate-100 text-sm text-brand-muted">
+                No media available for this product
+              </div>
+            )}
+          </div>
+
+          {mediaItems.length > 1 && (
+            <div className="mt-4 grid grid-cols-4 gap-3">
+              {mediaItems.map((media, index) => (
+                <button
+                  key={`${media.type}-${media.url}-${index}`}
+                  type="button"
+                  onClick={() => setActiveMedia(media)}
+                  className={`overflow-hidden rounded-xl border-2 ${activeMedia?.url === media.url && activeMedia?.type === media.type ? 'border-brand-gold' : 'border-slate-200'}`}
+                >
+                  {media.type === 'video' ? (
+                    <video src={media.url} className="h-24 w-full object-cover bg-black" muted />
+                  ) : (
+                    <img src={media.url} alt={`${product.name} view ${index + 1}`} className="h-24 w-full object-cover" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-brand-gold">{product.brandName}</p>

@@ -13,10 +13,12 @@ export default function SignupPage() {
     setForm((current) => ({ ...current, [name]: value }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
+    setError('');
+
     try {
-      signup(form);
+      await signup(form);
       navigate('/account');
     } catch (err) {
       setError(err.message || 'Unable to create account.');

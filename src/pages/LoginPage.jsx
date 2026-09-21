@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { isAdminIdentity } from '../firebase/config';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      navigate(isAdminIdentity(user) ? '/admin' : '/account', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
