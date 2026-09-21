@@ -5,45 +5,49 @@ import { useAuth } from '../context/AuthContext';
 export default function SignupPage() {
   const navigate = useNavigate();
   const { signup, sendOtp, verifyOtp } = useAuth();
-  const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', otp: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', otp: '' });
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+    if (name === 'email') {
+      setOtpSent(false);
+      setOtpVerified(false);
+      setInfo('');
+    }
   };
 
   const handleSendOtp = async () => {
     setError('');
     setInfo('');
+    setSendingOtp(true);
 
     try {
       if (!form.email.trim()) {
         throw new Error('Email is required to receive the OTP.');
       }
 
-      if (!form.phone.trim()) {
-        throw new Error('Phone number is required for your customer profile.');
-      }
-
-      const result = await sendOtp({ email: form.email, phone: form.phone });
+      const result = await sendOtp({ email: form.email });
       setOtpSent(true);
       setOtpVerified(false);
       setInfo(result.message);
-      if (result.demoCode) {
-        setInfo((current) => `${current} Demo code: ${result.demoCode}`);
-      }
     } catch (err) {
       setError(err.message || 'Unable to send OTP.');
+    } finally {
+      setSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = async () => {
     setError('');
     setInfo('');
+    setVerifyingOtp(true);
 
     try {
       await verifyOtp({ email: form.email, otp: form.otp });
@@ -51,6 +55,8 @@ export default function SignupPage() {
       setInfo('Email verified successfully. You can now create your account.');
     } catch (err) {
       setError(err.message || 'Unable to verify OTP.');
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -63,8 +69,7 @@ export default function SignupPage() {
         fullName: form.fullName,
         email: form.email,
         password: form.password,
-        phone: form.phone,
-        isPhoneVerified: otpVerified,
+        isEmailVerified: otpVerified,
       });
       navigate('/account');
     } catch (err) {
@@ -84,24 +89,35 @@ export default function SignupPage() {
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-brand">Email</label>
-            <input name="email" type="email" value={form.email} onChange={handleChange} className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand" placeholder="you@example.com" required />
+            <div className="flex gap-2">
+              <input
+                name="email"
+                type="email"
+                value={form.email}
+                onChange={handleChange}
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand"
+                placeholder="you@example.com"
+                required
+              />
+              <button
+                type="button"
+                onClick={handleSendOtp}
+                disabled={sendingOtp || otpVerified}
+                className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                  otpVerified
+                    ? 'bg-emerald-600 text-white'
+                    : sendingOtp
+                      ? 'bg-slate-300 text-slate-700'
+                      : 'bg-brand text-white hover:opacity-90'
+                }`}
+              >
+                {sendingOtp ? 'Sending...' : otpVerified ? 'Sent' : 'Send OTP'}
+              </button>
+            </div>
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-brand">Password</label>
             <input name="password" type="password" value={form.password} onChange={handleChange} className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand" placeholder="Choose a password" required />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-brand">Phone Number</label>
-            <input name="phone" type="tel" value={form.phone} onChange={handleChange} className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand" placeholder="+91 98765 43210" required />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-brand">Email OTP</label>
-            <div className="flex gap-2">
-              <input name="email" type="email" value={form.email} onChange={handleChange} className="flex-1 rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand" placeholder="you@example.com" required />
-              <button type="button" onClick={handleSendOtp} className="btn-secondary whitespace-nowrap">Send OTP</button>
-            </div>
           </div>
 
           {otpSent && (
@@ -109,7 +125,16 @@ export default function SignupPage() {
               <label className="mb-2 block text-sm font-semibold text-brand">Enter OTP</label>
               <div className="flex gap-2">
                 <input name="otp" value={form.otp} onChange={handleChange} className="flex-1 rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-brand" placeholder="6-digit OTP" />
-                <button type="button" onClick={handleVerifyOtp} className="btn-secondary whitespace-nowrap">Verify</button>
+                <button
+                  type="button"
+                  onClick={handleVerifyOtp}
+                  disabled={verifyingOtp || otpVerified}
+                  className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                    otpVerified ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white hover:opacity-90'
+                  }`}
+                >
+                  {verifyingOtp ? 'Verifying...' : otpVerified ? 'Verified' : 'Verify'}
+                </button>
               </div>
             </div>
           )}
@@ -117,7 +142,7 @@ export default function SignupPage() {
           {info && <p className="text-sm text-emerald-600">{info}</p>}
           {error && <p className="text-sm text-brand-error">{error}</p>}
 
-          <button type="submit" className="btn-primary w-full" disabled={!otpVerified}>
+          <button type="submit" className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60" disabled={!otpVerified}>
             {otpVerified ? 'Create Account' : 'Verify email to continue'}
           </button>
         </form>
