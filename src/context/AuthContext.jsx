@@ -39,6 +39,15 @@ const normalizeUser = (rawUser = {}) => {
   };
 };
 
+const persistUserSession = (nextUser) => {
+  if (typeof window === 'undefined') return;
+  if (nextUser) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+};
+
 function ensureAdminSeed() {
   const users = getUsers();
   if (!users.some((user) => user.email === DEFAULT_ADMIN.email)) {
@@ -59,11 +68,7 @@ export function AuthProvider({ children }) {
 
     if (!isFirebaseConfigured) {
       ensureAdminSeed();
-      if (user) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+      persistUserSession(user);
       return;
     }
 
@@ -74,9 +79,6 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // Admin access must be determined from Firebase Authentication only.
-      // Do not save a user record into Firestore, because that would make it look
-      // like a normal profile entry instead of an admin identity.
       const nextUser = normalizeUser({
         id: firebaseUser.uid,
         uid: firebaseUser.uid,
@@ -89,7 +91,7 @@ export function AuthProvider({ children }) {
     });
 
     return unsubscribe;
-  }, [isFirebaseConfigured]);
+  }, [isFirebaseConfigured, user]);
 
   const sendOtp = async ({ email }) => {
     const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -185,8 +187,10 @@ export function AuthProvider({ children }) {
     };
 
     saveUser(newUser);
-    setUser({ ...newUser, password: undefined });
-    return newUser;
+    const storedUser = { ...newUser, password: undefined };
+    setUser(storedUser);
+    persistUserSession(storedUser);
+    return storedUser;
   };
 
   const login = async ({ email, password }) => {
@@ -243,6 +247,7 @@ export function AuthProvider({ children }) {
       password: undefined,
     };
     setUser(safeUser);
+    persistUserSession(safeUser);
     return safeUser;
   };
 
@@ -250,10 +255,12 @@ export function AuthProvider({ children }) {
     if (isFirebaseConfigured) {
       await signOut(auth);
       setUser(null);
+      persistUserSession(null);
       return;
     }
 
     setUser(null);
+    persistUserSession(null);
   };
 
   const value = useMemo(
