@@ -1,43 +1,17 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db, isAdminIdentity, adminEmail, isFirebaseConfigured } from '../firebase/config';
+import { collection, query, where, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db, isAdminIdentity, isFirebaseConfigured } from '../firebase/config';
 import { getUsers, saveUser } from '../lib/localData';
 
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'fashion_eye_care_user';
-const DEFAULT_ADMIN = {
-  id: 'admin-fashion-eye-care',
-  fullName: 'Fashion Eye Care Admin',
-  email: adminEmail,
-  password: import.meta.env.VITE_ADMIN_PASSWORD || 'admin123',
-  createdAt: new Date().toISOString(),
-};
-
-const isAdminEmail = (email = '') => String(email).trim().toLowerCase() === adminEmail;
-
 const OTP_API_URL = import.meta.env.VITE_OTP_API_URL || '/api';
-
-const normalizeUser = (rawUser = {}) => {
-  const email = String(rawUser.email || '').trim().toLowerCase();
-  const isAdminUser = isAdminIdentity({ ...rawUser, email });
-
-  return {
-    id: rawUser.id || rawUser.uid || `user-${Date.now()}`,
-    uid: rawUser.uid || rawUser.id,
-    fullName: rawUser.fullName || rawUser.displayName || 'Fashion Customer',
-    email,
-    phone: rawUser.phone || '',
-    role: isAdminUser ? 'admin' : 'customer',
-    createdAt: rawUser.createdAt || new Date().toISOString(),
-  };
-};
 
 const persistUserSession = (nextUser) => {
   if (typeof window === 'undefined') return;
@@ -48,17 +22,9 @@ const persistUserSession = (nextUser) => {
   }
 };
 
-function ensureAdminSeed() {
-  const users = getUsers();
-  if (!users.some((user) => user.email === DEFAULT_ADMIN.email)) {
-    saveUser(DEFAULT_ADMIN);
-  }
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     if (typeof window === 'undefined') return null;
-    ensureAdminSeed();
     const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : null;
   });
@@ -66,32 +32,57 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    if (!isFirebaseConfigured) {
-      ensureAdminSeed();
-      persistUserSession(user);
+    if (!isFirebaseConfigured || !auth) {
       return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
-        setUser(null);
-        localStorage.removeItem(STORAGE_KEY);
-        return;
+      if (firebaseUser) {
+        let adminProfile = null;
+        if (db) {
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (userDocSnap.exists()) {
+              adminProfile = userDocSnap.data();
+            }
+          } catch (e) {
+            console.warn('Could not read admin user profile from Firestore:', e);
+          }
+        }
+
+        const nextAdmin = {
+          id: firebaseUser.uid,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          fullName: adminProfile?.fullName || firebaseUser.displayName || 'Administrator',
+          role: 'admin',
+          isAdmin: true,
+          createdAt: adminProfile?.createdAt || new Date().toISOString(),
+        };
+
+        setUser(nextAdmin);
+        persistUserSession(nextAdmin);
+      } else {
+        // If firebaseUser is null, only clear session if the active session was an Admin.
+        // Customers authenticate against the Firestore datastore and do not have a Firebase Auth session.
+        const currentSaved = localStorage.getItem(STORAGE_KEY);
+        if (currentSaved) {
+          try {
+            const parsed = JSON.parse(currentSaved);
+            if (parsed?.role === 'admin' || parsed?.isAdmin) {
+              setUser(null);
+              persistUserSession(null);
+            }
+          } catch {
+            setUser(null);
+            persistUserSession(null);
+          }
+        }
       }
-
-      const nextUser = normalizeUser({
-        id: firebaseUser.uid,
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        fullName: firebaseUser.displayName || 'Fashion Eye Care User',
-      });
-
-      setUser(nextUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
     });
 
     return unsubscribe;
-  }, [isFirebaseConfigured, user]);
+  }, []);
 
   const sendOtp = async ({ email }) => {
     const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -136,7 +127,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ email: normalizedEmail, otp: normalizedOtp }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) { 
+      if (!response.ok) {
         throw new Error(payload.error || 'Unable to verify OTP.');
       }
 
@@ -153,36 +144,58 @@ export function AuthProvider({ children }) {
       throw new Error('Email must be verified before creating the account.');
     }
 
-    if (isAdminEmail(normalizedEmail)) {
-      throw new Error('Admin credentials are reserved for the site administrator.');
-    }
+    if (isFirebaseConfigured && db) {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', normalizedEmail));
+      const existingSnap = await getDocs(q);
 
-    if (isFirebaseConfigured) {
-      const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
-      const nextUser = normalizeUser({
-        id: userCredential.user.uid,
-        uid: userCredential.user.uid,
-        fullName: fullName || 'Fashion Customer',
-        email: userCredential.user.email,
+      if (!existingSnap.empty) {
+        throw new Error('An account with this email already exists. Please login instead.');
+      }
+
+      const newDocRef = doc(usersRef);
+      const customerRecord = {
+        id: newDocRef.id,
+        uid: newDocRef.id,
+        fullName: fullName?.trim() || 'Customer',
+        email: normalizedEmail,
+        password,
+        role: 'customer',
+        isAdmin: false,
         createdAt: new Date().toISOString(),
-      });
+        updatedAt: new Date().toISOString(),
+      };
 
-      nextUser.role = 'customer';
-      setUser(nextUser);
-      return nextUser;
+      await setDoc(newDocRef, customerRecord);
+
+      const sessionUser = {
+        id: customerRecord.id,
+        uid: customerRecord.id,
+        fullName: customerRecord.fullName,
+        email: customerRecord.email,
+        role: 'customer',
+        isAdmin: false,
+        createdAt: customerRecord.createdAt,
+      };
+
+      setUser(sessionUser);
+      persistUserSession(sessionUser);
+      return sessionUser;
     }
 
+    // LocalStorage fallback when offline or database not configured
     const existingUsers = getUsers();
-    if (existingUsers.some((entry) => entry.email === normalizedEmail)) {
+    if (existingUsers.some((entry) => String(entry.email || '').toLowerCase() === normalizedEmail)) {
       throw new Error('Account already exists. Please login instead.');
     }
 
     const newUser = {
       id: crypto.randomUUID ? crypto.randomUUID() : `user-${Date.now()}`,
-      fullName: fullName || 'Fashion Customer',
+      fullName: fullName || 'Customer',
       email: normalizedEmail,
       password,
       role: 'customer',
+      isAdmin: false,
       createdAt: new Date().toISOString(),
     };
 
@@ -196,67 +209,107 @@ export function AuthProvider({ children }) {
   const login = async ({ email, password }) => {
     const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    if (isFirebaseConfigured) {
+    // 1. Try Firebase Authentication (for Admin login via Authentication Tab)
+    if (isFirebaseConfigured && auth) {
       try {
         const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-        const nextUser = normalizeUser({
-          id: userCredential.user.uid,
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          fullName: userCredential.user.displayName || 'Fashion Eye Care User',
-        });
+        const firebaseUser = userCredential.user;
 
-        setUser(nextUser);
-        return nextUser;
-      } catch (firebaseError) {
-        const isDemoAdminLogin = normalizedEmail === DEFAULT_ADMIN.email && String(password || '') === DEFAULT_ADMIN.password;
-
-        if (isDemoAdminLogin) {
-          const localAdminUser = {
-            ...DEFAULT_ADMIN,
-            role: 'admin',
-            isAdmin: true,
-            password: undefined,
-          };
-
-          setUser(localAdminUser);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(localAdminUser));
-          return localAdminUser;
+        let adminProfile = null;
+        if (db) {
+          try {
+            const userDocSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (userDocSnap.exists()) {
+              adminProfile = userDocSnap.data();
+            }
+          } catch (e) {
+            console.warn('Could not read admin profile from Firestore:', e);
+          }
         }
 
-        throw firebaseError;
+        const adminUser = {
+          id: firebaseUser.uid,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          fullName: adminProfile?.fullName || firebaseUser.displayName || 'Administrator',
+          role: 'admin',
+          isAdmin: true,
+          createdAt: adminProfile?.createdAt || new Date().toISOString(),
+        };
+
+        setUser(adminUser);
+        persistUserSession(adminUser);
+        return adminUser;
+      } catch {
+        // If not in Firebase Auth or invalid credentials, proceed to check customer in Firestore datastore
       }
     }
 
-    ensureAdminSeed();
-    const existingUsers = getUsers();
-    const adminMatch = normalizedEmail === DEFAULT_ADMIN.email && password === DEFAULT_ADMIN.password;
-    const matched = adminMatch
-      ? { ...DEFAULT_ADMIN, password: undefined }
-      : existingUsers.find((entry) => String(entry.email || '').toLowerCase() === normalizedEmail && String(entry.password || '') === String(password));
+    // 2. Check Customer record in Firestore Datastore (users collection)
+    if (isFirebaseConfigured && db) {
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', normalizedEmail));
+        const snap = await getDocs(q);
 
-    if (!matched) {
-      throw new Error('Invalid email or password.');
+        if (!snap.empty) {
+          const customerDoc = snap.docs[0].data();
+          if (String(customerDoc.password || '') === String(password)) {
+            const customerUser = {
+              id: snap.docs[0].id,
+              uid: snap.docs[0].id,
+              fullName: customerDoc.fullName || 'Customer',
+              email: customerDoc.email,
+              role: customerDoc.role || 'customer',
+              isAdmin: Boolean(customerDoc.isAdmin || customerDoc.role === 'admin'),
+              createdAt: customerDoc.createdAt || new Date().toISOString(),
+            };
+
+            setUser(customerUser);
+            persistUserSession(customerUser);
+            return customerUser;
+          }
+          throw new Error('Invalid email or password.');
+        }
+      } catch (err) {
+        if (err.message === 'Invalid email or password.') throw err;
+        console.warn('Firestore customer lookup failed:', err);
+      }
     }
 
-    const safeUser = {
-      ...matched,
-      email: String(matched.email || normalizedEmail).toLowerCase(),
-      role: matched.role || 'customer',
-      isAdmin: isAdminEmail(normalizedEmail),
-      password: undefined,
-    };
-    setUser(safeUser);
-    persistUserSession(safeUser);
-    return safeUser;
+    // 3. Check localData fallback for offline testing
+    const existingUsers = getUsers();
+    const matched = existingUsers.find(
+      (entry) =>
+        String(entry.email || '').toLowerCase() === normalizedEmail &&
+        String(entry.password || '') === String(password),
+    );
+
+    if (matched) {
+      const safeUser = {
+        ...matched,
+        id: matched.id,
+        uid: matched.id,
+        email: String(matched.email || normalizedEmail).toLowerCase(),
+        role: matched.role || 'customer',
+        isAdmin: Boolean(matched.isAdmin || matched.role === 'admin'),
+        password: undefined,
+      };
+      setUser(safeUser);
+      persistUserSession(safeUser);
+      return safeUser;
+    }
+
+    throw new Error('Invalid email or password.');
   };
 
   const logout = async () => {
-    if (isFirebaseConfigured) {
-      await signOut(auth);
-      setUser(null);
-      persistUserSession(null);
-      return;
+    if (isFirebaseConfigured && auth) {
+      try {
+        await signOut(auth);
+      } catch (e) {
+        console.warn('Sign out error:', e);
+      }
     }
 
     setUser(null);

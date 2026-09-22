@@ -49,9 +49,9 @@ export async function seedCatalog() {
   console.log('Catalog seeded successfully');
 }
 
-export async function ensureAdminUser(email = process.env.VITE_ADMIN_EMAIL || 'admin@fashioneyecare.com', password = process.env.ADMIN_PASSWORD) {
-  if (!password) {
-    throw new Error('Set ADMIN_PASSWORD before running the Firebase seed script.');
+export async function ensureAdminUser(email = process.env.ADMIN_EMAIL, password = process.env.ADMIN_PASSWORD) {
+  if (!email || !password) {
+    throw new Error('Set ADMIN_EMAIL and ADMIN_PASSWORD before running the Firebase seed script.');
   }
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);

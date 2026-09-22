@@ -27,9 +27,6 @@ export const setAdminRoleForUser = async (uid, isAdminValue = true) => {
 export const registerUser = async ({ email, password, fullName }) => {
   const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  if (normalizedEmail === 'admin@fashioneyecare.com') {
-    throw new Error('Admin credentials are reserved for the site administrator.');
-  }
 
   const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
   const user = userCredential.user;
