@@ -59,11 +59,13 @@ export default function HomePage() {
           </div>
           <div className="relative">
             <div className="absolute -inset-4 rounded-[2rem] bg-brand-gold/20 blur-2xl" />
-            <img
-              src="https://images.unsplash.com/photo-1577803947579-9f5b87d9c5f1?auto=format&fit=crop&w=1200&q=80"
-              alt="Eyewear hero"
-              className="relative h-[420px] w-full rounded-[2rem] object-cover shadow-2xl"
-            />
+            ```jsx
+<img
+  src="/assets/images/Home-Page.jpeg"
+  alt="Eyewear hero"
+  className="relative h-[420px] w-full rounded-[2rem] object-cover shadow-2xl"
+/>
+
           </div>
         </div>
       </section>
