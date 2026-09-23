@@ -62,7 +62,7 @@ export default function HomePage() {
 <img
   src="/assets/images/Home-Page.jpeg"
   alt="Eyewear hero"
-  className="relative h-[420px] w-full rounded-[2rem] object-cover shadow-2xl"
+  className="relative h-[420px] w-full rounded-[2rem] object-contain shadow-2xl"
 />
 
           </div>
