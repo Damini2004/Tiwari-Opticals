@@ -58,8 +58,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="relative">
-            <div className="absolute -inset-4 rounded-[2rem] bg-brand-gold/20 blur-2xl" />
-            ```jsx
+            <div className="absolute -inset-4 rounded-[2rem] bg-brand-gold/20 blur-2xl" />  
 <img
   src="/assets/images/Home-Page.jpeg"
   alt="Eyewear hero"
