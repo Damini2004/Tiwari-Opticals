@@ -7,7 +7,7 @@ import crypto from 'crypto';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
@@ -18,12 +18,10 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 5;
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || 'false') === 'true',
+  service: "gmail",
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_APP_PASSWORD,
   },
 });
 
@@ -126,6 +124,6 @@ app.get('/api/health', (_, res) => {
   res.json({ ok: true, service: 'tiwari-opticals-otp' });
 });
 
-app.listen(port, () => {
-  console.log(`OTP server running on http://localhost:${port}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`OTP server running on port ${PORT}`);
 });

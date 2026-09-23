@@ -71,6 +71,7 @@ export default function CheckoutPage() {
       userId: user.id,
       userEmail: form.email,
       customerName: form.fullName,
+      phone: form.phone,
       shippingAddress: {
         address: form.address,
         city: form.city,
