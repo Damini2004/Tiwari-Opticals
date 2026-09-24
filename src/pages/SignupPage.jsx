@@ -127,7 +127,7 @@ export default function SignupPage() {
       setSendingOtp(false);
     }
   };
-
+// 
   const handleVerifyOtp = async () => {
     setError('');
     setInfo('');
