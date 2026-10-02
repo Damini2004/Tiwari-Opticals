@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import emailjs from '@emailjs/browser';
 import { useAuth } from '../context/AuthContext';
+
+const MAX_VERIFY_ATTEMPTS = 5;
+
+const normalizeEmail = (value) =>
+  String(value || '').trim().toLowerCase();
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { signup } = useAuth();
+  const { signup, sendOtp, verifyOtp } = useAuth();
 
   const [form, setForm] = useState({
     fullName: '',
@@ -16,19 +20,39 @@ export default function SignupPage() {
 
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
-
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-
-  // Store OTP information only for this customer signup page.
   const [otpData, setOtpData] = useState(null);
+  const [clockNow, setClockNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!otpData?.resendAvailableAt) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setClockNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [otpData?.resendAvailableAt]);
+
+  const resendCooldownSeconds = useMemo(() => {
+    if (!otpData?.resendAvailableAt) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Math.ceil((otpData.resendAvailableAt - clockNow) / 1000)
+    );
+  }, [otpData?.resendAvailableAt, clockNow]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
 
-    // Only allow numbers in OTP field
     if (name === 'otp') {
       const numericValue = value.replace(/\D/g, '').slice(0, 6);
 
@@ -45,7 +69,6 @@ export default function SignupPage() {
       [name]: value,
     }));
 
-    // If customer changes email, previous OTP becomes invalid.
     if (name === 'email') {
       setOtpSent(false);
       setOtpVerified(false);
@@ -59,49 +82,46 @@ export default function SignupPage() {
     }
   };
 
-  const generateOtp = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
-
   const handleSendOtp = async () => {
     setError('');
     setInfo('');
     setSendingOtp(true);
 
     try {
-      const email = form.email.trim().toLowerCase();
+      const email = normalizeEmail(form.email);
 
       if (!email) {
         throw new Error('Email is required to receive the OTP.');
       }
 
-      // Generate a new 6-digit OTP.
-      const otp = generateOtp();
+      if (otpVerified && otpData?.email === email) {
+        throw new Error('This email is already verified.');
+      }
 
-      // OTP expires after 5 minutes.
-      const expiresAt = Date.now() + 5 * 60 * 1000;
+      if (otpData && otpData.email === email) {
+        const remainingSeconds = Math.max(
+          1,
+          Math.ceil((otpData.resendAvailableAt - Date.now()) / 1000)
+        );
 
-      // Store OTP information in this browser session.
-      setOtpData({
-        email,
-        otp,
-        expiresAt,
-        attempts: 0,
-      });
-
-      // Send OTP using EmailJS.
-      await emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        {
-          to_email: email,
-          otp: otp,
-        },
-        {
-          publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
+        if (Date.now() < otpData.resendAvailableAt) {
+          throw new Error(
+            `Please wait ${remainingSeconds} seconds before requesting another OTP.`
+          );
         }
-      );
+      }
 
+      const generatedOtp = await sendOtp({ email });
+
+      const nextOtpData = {
+        email,
+        expiresAt: generatedOtp.expiresAt,
+        resendAvailableAt: generatedOtp.resendAvailableAt,
+        attempts: 0,
+        verifiedAt: null,
+      };
+
+      setOtpData(nextOtpData);
       setOtpSent(true);
       setOtpVerified(false);
       setForm((current) => ({
@@ -110,32 +130,33 @@ export default function SignupPage() {
       }));
 
       setInfo(
-        'OTP sent successfully. Please check your email. The OTP is valid for 5 minutes.'
+        `OTP sent successfully to ${email}. The code is valid for 5 minutes.`
       );
     } catch (err) {
       console.error('OTP sending error:', err);
 
       setOtpData(null);
       setOtpSent(false);
-
       setError(
-        err?.text ||
-          err?.message ||
-          'Unable to send OTP. Please try again.'
+        err?.text || err?.message || 'Unable to send OTP. Please try again.'
       );
     } finally {
       setSendingOtp(false);
     }
   };
-// 
+
   const handleVerifyOtp = async () => {
     setError('');
     setInfo('');
     setVerifyingOtp(true);
 
     try {
+      const email = normalizeEmail(form.email);
       const enteredOtp = form.otp.trim();
-      const email = form.email.trim().toLowerCase();
+
+      if (!email) {
+        throw new Error('Please enter your email address.');
+      }
 
       if (!enteredOtp) {
         throw new Error('Please enter the OTP.');
@@ -149,60 +170,66 @@ export default function SignupPage() {
         throw new Error('Please request a new OTP.');
       }
 
-      // Make sure the OTP belongs to the current email.
       if (otpData.email !== email) {
         throw new Error('Email has changed. Please request a new OTP.');
       }
 
-      // Check OTP expiry.
       if (Date.now() > otpData.expiresAt) {
         setOtpData(null);
         setOtpSent(false);
-
-        throw new Error(
-          'OTP has expired. Please request a new OTP.'
-        );
+        throw new Error('OTP has expired. Please request a new OTP.');
       }
 
-      // Maximum 5 attempts.
-      if (otpData.attempts >= 5) {
+      if (otpData.attempts >= MAX_VERIFY_ATTEMPTS) {
         setOtpData(null);
         setOtpSent(false);
-
         throw new Error(
           'Too many incorrect attempts. Please request a new OTP.'
         );
       }
 
-      // Check OTP.
-      if (enteredOtp !== otpData.otp) {
-        setOtpData((current) => {
-          if (!current) return current;
+      const result = await verifyOtp({ email, otp: enteredOtp });
 
-          return {
-            ...current,
-            attempts: current.attempts + 1,
-          };
-        });
-
-        const remainingAttempts = 4 - otpData.attempts;
-
-        throw new Error(
-          remainingAttempts > 0
-            ? `Invalid OTP. ${remainingAttempts} attempt(s) remaining.`
-            : 'Invalid OTP. Please request a new OTP.'
-        );
+      if (!result?.verified) {
+        throw new Error('Unable to verify OTP.');
       }
 
-      // OTP is correct.
-      setOtpVerified(true);
-      setOtpData(null);
+      const nextOtpData = {
+        ...otpData,
+        attempts: 0,
+        verifiedAt: Date.now(),
+        otp: null,
+      };
 
-      setInfo(
-        'Email verified successfully. You can now create your account.'
-      );
+      setOtpData(nextOtpData);
+      setOtpVerified(true);
+      setOtpSent(true);
+      setInfo('Email verified successfully. You can now create your account.');
     } catch (err) {
-      setError(err.message || 'Unable to verify OTP.');
+      const nextAttempts = (otpData?.attempts || 0) + 1;
+      const remainingAttempts = MAX_VERIFY_ATTEMPTS - nextAttempts;
+
+      if (otpData && otpData.email === normalizeEmail(form.email)) {
+        setOtpData((current) => ({
+          ...current,
+          attempts: Math.min(nextAttempts, MAX_VERIFY_ATTEMPTS),
+        }));
+      }
+
+      if (
+        err?.message?.includes('Invalid OTP') ||
+        err?.message?.includes('Too many incorrect attempts') ||
+        err?.message?.includes('OTP expired')
+      ) {
+        setError(err.message);
+      } else {
+        setError(err.message || 'Unable to verify OTP.');
+      }
+
+      if (remainingAttempts <= 0 && otpData) {
+        setOtpData(null);
+        setOtpSent(false);
+      }
     } finally {
       setVerifyingOtp(false);
     }
@@ -222,9 +249,6 @@ export default function SignupPage() {
         fullName: form.fullName,
         email: form.email,
         password: form.password,
-
-        // Keep your existing Firebase signup logic.
-        // Admin functionality is not changed.
         isEmailVerified: otpVerified,
       });
 
@@ -237,19 +261,13 @@ export default function SignupPage() {
   return (
     <div className="container-shell py-12">
       <div className="mx-auto max-w-md card-surface p-8">
-        <h1 className="text-3xl font-black">
-          Create your account
-        </h1>
+        <h1 className="text-3xl font-black">Create your account</h1>
 
         <p className="mt-2 text-sm text-brand-muted">
           Unlock savings, wishlist and prescription management.
         </p>
 
-        <form
-          className="mt-6 space-y-4"
-          onSubmit={handleSubmit}
-        >
-          {/* Full Name */}
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="mb-2 block text-sm font-semibold text-brand">
               Full Name
@@ -265,7 +283,6 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* Email */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-brand">
               Email
@@ -285,11 +302,11 @@ export default function SignupPage() {
               <button
                 type="button"
                 onClick={handleSendOtp}
-                disabled={sendingOtp || otpVerified}
+                disabled={sendingOtp || otpVerified || resendCooldownSeconds > 0}
                 className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition ${
                   otpVerified
                     ? 'bg-emerald-600 text-white'
-                    : sendingOtp
+                    : sendingOtp || resendCooldownSeconds > 0
                       ? 'bg-slate-300 text-slate-700'
                       : 'bg-brand text-white hover:opacity-90'
                 }`}
@@ -298,12 +315,13 @@ export default function SignupPage() {
                   ? 'Sending...'
                   : otpVerified
                     ? 'Verified'
-                    : 'Send OTP'}
+                    : resendCooldownSeconds > 0
+                      ? `Wait ${resendCooldownSeconds}s`
+                      : 'Send OTP'}
               </button>
             </div>
           </div>
 
-          {/* Password */}
           <div>
             <label className="mb-2 block text-sm font-semibold text-brand">
               Password
@@ -320,7 +338,6 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* OTP */}
           {otpSent && (
             <div>
               <label className="mb-2 block text-sm font-semibold text-brand">
@@ -343,16 +360,11 @@ export default function SignupPage() {
                 <button
                   type="button"
                   onClick={handleVerifyOtp}
-                  disabled={
-                    verifyingOtp ||
-                    otpVerified ||
-                    form.otp.length !== 6
-                  }
+                  disabled={verifyingOtp || otpVerified || form.otp.length !== 6}
                   className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold transition ${
                     otpVerified
                       ? 'bg-emerald-600 text-white'
-                      : verifyingOtp ||
-                          form.otp.length !== 6
+                      : verifyingOtp || form.otp.length !== 6
                         ? 'bg-slate-300 text-slate-700'
                         : 'bg-slate-800 text-white hover:opacity-90'
                   }`}
@@ -367,37 +379,22 @@ export default function SignupPage() {
             </div>
           )}
 
-          {/* Messages */}
-          {info && (
-            <p className="text-sm text-emerald-600">
-              {info}
-            </p>
-          )}
+          {info && <p className="text-sm text-emerald-600">{info}</p>}
 
-          {error && (
-            <p className="text-sm text-brand-error">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-sm text-brand-error">{error}</p>}
 
-          {/* Create Account */}
           <button
             type="submit"
             className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!otpVerified}
           >
-            {otpVerified
-              ? 'Create Account'
-              : 'Verify email to continue'}
+            {otpVerified ? 'Create Account' : 'Verify email to continue'}
           </button>
         </form>
 
         <p className="mt-5 text-center text-sm text-brand-muted">
           Already a customer?{' '}
-          <Link
-            to="/login"
-            className="font-semibold text-brand-gold"
-          >
+          <Link to="/login" className="font-semibold text-brand-gold">
             Login
           </Link>
         </p>

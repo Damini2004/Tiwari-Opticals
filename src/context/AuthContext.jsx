@@ -37,9 +37,39 @@ import {
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'fashion_eye_care_user';
-
+const OTP_TTL_MS = 5 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_API_URL =
-  import.meta.env.VITE_OTP_API_URL || '/api';
+  import.meta.env.VITE_OTP_API_URL || 'http://localhost:4000/api';
+
+const normalizeEmail = (value) =>
+  String(value || '').trim().toLowerCase();
+
+const postOtpRequest = async (endpoint, body) => {
+  let response;
+
+  try {
+    response = await fetch(`${OTP_API_URL}/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new Error(
+      'Could not reach the OTP server. Make sure the project server is running.'
+    );
+  }
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'OTP request failed.');
+  }
+
+  return payload;
+};
 
 /*
 =========================================================
@@ -280,52 +310,23 @@ export function AuthProvider({ children }) {
   =======================================================
   */
   const sendOtp = async ({ email }) => {
-    const normalizedEmail = String(email || '')
-      .trim()
-      .toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail) {
-      throw new Error(
-        'Email is required to receive the OTP.'
-      );
+      throw new Error('Email is required to receive the OTP.');
     }
 
-    try {
-      const response = await fetch(
-        `${OTP_API_URL}/send-otp`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: normalizedEmail,
-          }),
-        }
-      );
+    const payload = await postOtpRequest('send-otp', {
+      email: normalizedEmail,
+    });
 
-      const payload =
-        await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          payload.error ||
-            'Unable to send OTP email.'
-        );
-      }
-
-      return {
-        email: normalizedEmail,
-        message:
-          payload.message ||
-          `OTP sent to ${normalizedEmail}.`,
-      };
-    } catch (error) {
-      throw new Error(
-        error.message ||
-          'Unable to send OTP email.'
-      );
-    }
+    return {
+      email: normalizedEmail,
+      expiresAt: payload.expiresAt || Date.now() + OTP_TTL_MS,
+      resendAvailableAt:
+        payload.resendAvailableAt || Date.now() + RESEND_COOLDOWN_MS,
+      message: payload.message || `OTP sent to ${normalizedEmail}.`,
+    };
   };
 
   /*
@@ -334,51 +335,23 @@ export function AuthProvider({ children }) {
   =======================================================
   */
   const verifyOtp = async ({ email, otp }) => {
-    const normalizedEmail = String(email || '')
-      .trim()
-      .toLowerCase();
-
-    const normalizedOtp = String(otp || '')
-      .trim();
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedOtp = String(otp || '').trim();
 
     if (!normalizedEmail || !normalizedOtp) {
-      throw new Error(
-        'Email and OTP are required.'
-      );
+      throw new Error('Email and OTP are required.');
     }
 
-    try {
-      const response = await fetch(
-        `${OTP_API_URL}/verify-otp`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: normalizedEmail,
-            otp: normalizedOtp,
-          }),
-        }
-      );
+    const payload = await postOtpRequest('verify-otp', {
+      email: normalizedEmail,
+      otp: normalizedOtp,
+    });
 
-      const payload =
-        await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          payload.error ||
-            'Unable to verify OTP.'
-        );
-      }
-
-      return true;
-    } catch (error) {
-      throw new Error(
-        error.message ||
-          'Unable to verify OTP.'
-      );
-    }
+    return {
+      verified: Boolean(payload.ok),
+      email: normalizedEmail,
+      message: payload.message || 'Email verified successfully.',
+    };
   };
 
   /*

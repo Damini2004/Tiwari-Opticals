@@ -18,10 +18,12 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 5;
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_APP_PASSWORD,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   },
 });
 
@@ -48,10 +50,13 @@ app.post('/api/send-otp', async (req, res) => {
   }
 
   const otp = generateOtp();
+  const now = Date.now();
+  const expiresAt = now + OTP_TTL_MS;
+  const resendAvailableAt = now + RESEND_COOLDOWN_MS;
   emailStore.set(normalizedEmail, {
     otp,
-    expiresAt: Date.now() + OTP_TTL_MS,
-    resendAvailableAt: Date.now() + RESEND_COOLDOWN_MS,
+    expiresAt,
+    resendAvailableAt,
     attempts: 0,
   });
 
@@ -74,6 +79,8 @@ app.post('/api/send-otp', async (req, res) => {
     return res.json({
       ok: true,
       message: 'OTP sent to your email.',
+      expiresAt,
+      resendAvailableAt,
     });
   } catch (error) {
     console.error('OTP email error:', error);
