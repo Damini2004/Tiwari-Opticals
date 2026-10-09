@@ -21,6 +21,9 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number(process.env.SMTP_PORT) || 587,
   secure: process.env.SMTP_SECURE === 'true',
+  connectionTimeout: 5000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -29,7 +32,70 @@ const transporter = nodemailer.createTransport({
 
 const generateOtp = () => String(crypto.randomInt(100000, 1_000_000));
 const isValidEmail = (email) => /^\S+@\S+\.\S+$/.test(email);
+const hasResendConfig = () => Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
 const hasSmtpConfig = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
+const sendOtpEmail = async ({ email, otp }) => {
+  const text = `Your Tiwari Opticals verification code is ${otp}. It expires in 5 minutes.`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+      <h2>Tiwari Opticals</h2>
+      <p>Your verification code is:</p>
+      <p style="font-size: 32px; font-weight: 700; letter-spacing: 4px; margin: 20px 0;">${otp}</p>
+      <p>This code expires in 5 minutes.</p>
+    </div>
+  `;
+
+  let smtpError = null;
+
+  if (hasSmtpConfig()) {
+    try {
+      await transporter.sendMail({
+        from: process.env.SMTP_USER,
+        to: email,
+        subject: 'Your Tiwari Opticals verification code',
+        text,
+        html,
+      });
+
+      return 'smtp';
+    } catch (error) {
+      smtpError = error;
+      console.error('SMTP OTP delivery failed; trying Resend:', error.message);
+    }
+  }
+
+  if (hasResendConfig()) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM,
+        to: [email],
+        subject: 'Your Tiwari Opticals verification code',
+        text,
+        html,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message || `Resend returned HTTP ${response.status}.`);
+    }
+
+    return 'resend';
+  }
+
+  if (smtpError) {
+    throw new Error('SMTP delivery failed and Resend fallback is unavailable.');
+  }
+
+  throw new Error('Email delivery is not configured.');
+};
 
 app.post('/api/send-otp', async (req, res) => {
   const { email } = req.body || {};
@@ -39,7 +105,7 @@ app.post('/api/send-otp', async (req, res) => {
     return res.status(400).json({ error: 'Enter a valid email address.' });
   }
 
-  if (!hasSmtpConfig()) {
+  if (!hasResendConfig() && !hasSmtpConfig()) {
     return res.status(503).json({ error: 'Email service is not configured.' });
   }
 
@@ -61,19 +127,9 @@ app.post('/api/send-otp', async (req, res) => {
   });
 
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: normalizedEmail,
-      subject: 'Your Tiwari Opticals verification code',
-      text: `Your Tiwari Opticals verification code is ${otp}. It expires in 5 minutes.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
-          <h2>Tiwari Opticals</h2>
-          <p>Your verification code is:</p>
-          <p style="font-size: 32px; font-weight: 700; letter-spacing: 4px; margin: 20px 0;">${otp}</p>
-          <p>This code expires in 5 minutes.</p>
-        </div>
-      `,
+    const deliveryProvider = await sendOtpEmail({
+      email: normalizedEmail,
+      otp,
     });
 
     return res.json({
@@ -81,12 +137,13 @@ app.post('/api/send-otp', async (req, res) => {
       message: 'OTP sent to your email.',
       expiresAt,
       resendAvailableAt,
+      deliveryProvider,
     });
   } catch (error) {
-    console.error('OTP email error:', error);
+    console.error('OTP email delivery failed:', error.message);
     emailStore.delete(normalizedEmail);
     return res.status(500).json({
-      error: 'Unable to send OTP email. Please check SMTP settings.',
+      error: 'Unable to send OTP email. Check Resend and SMTP settings.',
     });
   }
 });
